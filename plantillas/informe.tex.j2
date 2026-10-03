@@ -1,0 +1,576 @@
+\documentclass[11pt,a4paper]{article}
+
+% ------------------------------------------------------------------
+% Generado automáticamente por informe_pdf.py a partir de la plantilla
+% plantillas/informe.tex.j2 -- NO editar a mano, los cambios se perderían en la
+% siguiente ejecución de main.py. Edita la plantilla, no este fichero.
+% ------------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\spanishplainpercent  % desactiva el espaciado automático de babel-spanish ante "%"
+                      % (vía \let, no \shorthandoff{%}: ese literal "%" siempre se lee
+                      % como comentario de LaTeX en el preámbulo y rompe el fichero)
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{textcomp}
+\usepackage{lmodern}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage[hidelinks,colorlinks=false]{hyperref}
+
+\captionsetup{font=small,labelfont=bf}
+\renewcommand{\arraystretch}{1.15}
+
+\definecolor{azulinf}{HTML}{2A3F8F}
+\definecolor{grisinf}{HTML}{555555}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{grisinf}{Cartera cuantitativa de fondos -- Informe de posiciones}}
+\fancyhead[R]{\small\textcolor{grisinf}{\thepage}}
+\renewcommand{\headrulewidth}{0.3pt}
+
+% ------------------------------------------------------------------
+\title{\textcolor{azulinf}{\Huge Cartera cuantitativa de fondos}\\[0.3cm]
+\Large Resumen de posiciones, métricas de rentabilidad y riesgo,\\ y justificación matemática y cualitativa}
+\author{Metodología cuantitativa HRP sobre universo IronIA (CFA Society Spain)}
+\date{Ventana de estimación: \VAR{ventana_inicio} a \VAR{ventana_fin}\\ Informe generado el \VAR{fecha_informe}}
+
+% ==================================================================
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Concepto} & \textbf{Valor} \\
+\midrule
+Fondos en el universo analizado & \VAR{universo_n} (\VAR{con_datos_n} con histórico suficiente) \\
+Fondos preseleccionados por clustering & \VAR{preseleccionados_n} \\
+Fondos en la cartera final & \VAR{cartera_n} \\
+Método de construcción de la cartera & Hierarchical Risk Parity (\VAR{metodo}) \\
+Volatilidad esperada (ex ante, covarianza estimada) & \VAR{vol_esperada_pct}\,\% anual \\
+\BLOCK{if backtest.activo}
+Sharpe realizado fuera de muestra (backtest walk-forward) & \VAR{backtest.sharpe_hrp}\ \ (IC 95\,\%: \VAR{backtest.ic95_hrp}) \\
+Caída máxima fuera de muestra (backtest walk-forward) & \VAR{backtest.dd_hrp_pct}\,\% \\
+\BLOCK{else}
+Backtest walk-forward & no ejecutado en esta corrida \\
+\BLOCK{endif}
+\bottomrule
+\end{tabular}
+\end{center}
+
+\clearpage
+\tableofcontents
+\thispagestyle{empty}
+\clearpage
+
+% ==================================================================
+\section{Resumen ejecutivo}
+
+La cartera está compuesta por \textbf{\VAR{cartera_n} fondos} obtenidos de un universo de
+\VAR{universo_n} fondos disponibles en la plataforma IronIA (\VAR{con_datos_n} con histórico
+descargable), mediante un proceso cuantitativo que no incorpora criterio discrecional en la
+fase de cribado: ranking por \emph{Probabilistic Sharpe Ratio} (PSR)\BLOCK{if ranking_multiventana}
+ a varias ventanas\BLOCK{endif}, eliminación de duplicados por correlación y reducción a
+\VAR{preseleccionados_n} posiciones por clustering jerárquico\BLOCK{if suelo == "marginal"}, seguida
+de una poda adicional por contribución marginal al Sharpe hasta \VAR{cartera_n} fondos\BLOCK{endif}.
+Los pesos se obtienen con \emph{Hierarchical Risk Parity} sobre una matriz de covarianzas con
+\emph{shrinkage} de Ledoit-Wolf\BLOCK{if usar_corr_estres} (correlación: máximo frente al periodo de
+estrés \VAR{estres_inicio}--\VAR{estres_fin})\BLOCK{endif}, con un techo del \VAR{peso_maximo_pct}\,\%
+por fondo\BLOCK{if credito.activo} y un techo del \VAR{credito.techo_pct}\,\% para el bloque conjunto
+de renta fija de crédito\BLOCK{endif}.
+
+\textbf{Perfil de riesgo y rentabilidad.} En la ventana de estimación (\VAR{n_semanas} semanas) la
+cartera resultante exhibe una rentabilidad anualizada del \VAR{rent_hist_pct}\,\%, una volatilidad del
+\VAR{vol_hist_pct}\,\% y un Sharpe de \VAR{sharpe_hist}, con una caída máxima de \VAR{dd_hist_pct}\,\%.
+Estas cifras corresponden al periodo \emph{usado para construir} la cartera y no deben interpretarse
+como una expectativa de rentabilidad futura.
+\BLOCK{if backtest.activo}
+El dato más relevante para juzgar el método es el \textbf{backtest walk-forward fuera de muestra}
+(\VAR{(backtest.n_semanas / periodos) | round(1)} años, \VAR{backtest.n_rebalanceos} rebalanceos \VAR{rebalanceo}, selección y
+pesos recalculados en cada periodo solo con información pasada): ahí HRP obtiene un Sharpe de
+\textbf{\VAR{backtest.sharpe_hrp}} (error estándar \VAR{backtest.se_sharpe_hrp}; intervalo de
+confianza al 95\,\%: \VAR{backtest.ic95_hrp}\BLOCK{if not backtest.ic95_cruza_cero}, que no cruza el
+cero\BLOCK{endif}) y una caída máxima de \VAR{backtest.dd_hrp_pct}\,\%, frente a los demás métodos
+comparados en la tabla~\ref{tab:backtest} -- véase la sección~\ref{sec:backtest}.
+\BLOCK{else}
+El backtest walk-forward no se ha ejecutado en esta corrida.
+\BLOCK{endif}
+
+\textbf{Composición.} \BLOCK{if superlativos.max_contrib}La posición con mayor contribución al riesgo
+es \VAR{superlativos.max_contrib.nombre} (\VAR{superlativos.max_contrib.contrib_pct}\,\% del riesgo con
+un \VAR{superlativos.max_contrib.peso_pct}\,\% del capital), y la de menor concentración de riesgo
+relativa a su peso es \VAR{superlativos.min_concentracion.nombre} (concentración
+\VAR{superlativos.min_concentracion.concentracion}).\BLOCK{+endif}
+\BLOCK{set n_techo = fondos | selectattr("en_techo") | list | length}\BLOCK{if n_techo == 1} Una posición está en el techo de peso del \VAR{peso_maximo_pct}\,\%.\BLOCK{elif n_techo > 1} \VAR{n_techo} posiciones están en el techo de peso del \VAR{peso_maximo_pct}\,\%.\BLOCK{endif}
+Los detalles de cada posición se desarrollan en la sección~\ref{sec:posiciones}.
+
+% ==================================================================
+\section{Metodología cuantitativa}
+\label{sec:metodologia}
+
+Todas las decisiones discrecionales del modelo están parametrizadas y documentadas en
+\texttt{config.toml}; aquí se resumen los fundamentos matemáticos de cada etapa, descritos tal y
+como están configurados en esta ejecución.
+
+\subsection{Datos, frecuencia y tipo libre de riesgo}
+Los precios se convierten a rentabilidad total en EUR y se agregan a frecuencia semanal. La ventana
+de estimación es de \VAR{ventana_anios} años (\VAR{n_semanas} observaciones semanales).
+\BLOCK{if rf_fuente == "estr"}
+El tipo libre de riesgo (\texttt{rf\_fuente = "estr"}) se descarga como serie diaria del
+\,\texteuro STR publicado por el BCE y se compone a frecuencia semanal, usándose en todos los
+ratios de Sharpe del pipeline; si la descarga falla, el modelo recurre automáticamente al
+\VAR{tipo_libre_riesgo_pct}\,\% anual fijo y lo señala por consola.
+\BLOCK{else}
+El tipo libre de riesgo es fijo (\texttt{rf\_fuente = "fijo"}): \VAR{tipo_libre_riesgo_pct}\,\% anual.
+\BLOCK{endif}
+
+\subsection{Ratio de Sharpe ajustado por autocorrelación (Lo, 2002)}
+Cuando el valor liquidativo de un fondo está ``suavizado'', su volatilidad observada subestima la
+real. Siguiendo a Lo (2002) y Getmansky, Lo y Makarov (2004), si $\rho$ es la autocorrelación de
+primer orden de los rendimientos semanales y $q=\VAR{periodos}$ el número de periodos por año, el factor de
+corrección de varianza al agregar es
+\[
+\lambda(\rho, q) = 1 + 2\sum_{k=1}^{q-1} \frac{q-k}{q}\,\rho^{k},
+\]
+y la volatilidad ajustada es $\sigma_{\text{aj}} = \sigma\sqrt{\lambda(\rho,q)}$. El ajuste solo se
+aplica cuando $\rho > \VAR{autocorrelacion_alerta}$ (umbral \texttt{autocorrelacion\_alerta}).
+\BLOCK{set con_ajuste = fondos | selectattr("ajuste_lo") | list}
+\BLOCK{if con_ajuste}
+En la cartera final, \BLOCK{if con_ajuste | length == 1}una posición (\VAR{con_ajuste | map(attribute="nombre") | join(", ")}) supera\BLOCK{else}\VAR{con_ajuste | length} posiciones (\VAR{con_ajuste | map(attribute="nombre") | join(", ")}) superan\BLOCK{endif} ese umbral -- véase la sección~\ref{sec:posiciones}.
+\BLOCK{else}
+En la cartera final, ninguna posición supera ese umbral: no se aplica el ajuste a ningún fondo en
+esta ejecución.
+\BLOCK{endif}
+
+\subsection{Probabilistic Sharpe Ratio\BLOCK{if ranking_multiventana} a varias ventanas\BLOCK{endif} (Bailey y López de Prado, 2012)}
+El Sharpe muestral es un estimador ruidoso: con historiales cortos, o con asimetría y curtosis no
+normales, un Sharpe alto puede no ser estadísticamente distinguible del de referencia. El PSR estima
+la probabilidad de que el Sharpe \emph{verdadero} supere un umbral $SR_{\text{ref}}$, dada la
+longitud de la muestra $n$, la asimetría $\hat{\gamma}_3$ y la curtosis $\hat{\gamma}_4$:
+\[
+\widehat{\mathrm{PSR}} = \Phi\!\left(\frac{(\widehat{SR}-SR_{\text{ref}})\,\sqrt{n-1}}{\sqrt{1-\hat{\gamma}_3\widehat{SR}+\frac{\hat{\gamma}_4-1}{4}\widehat{SR}^{2}}}\right).
+\]
+\BLOCK{if ranking_multiventana}
+El criterio de ranking de la selección (\texttt{criterio\_ranking = "\VAR{criterio_ranking}"},
+\texttt{ranking\_multiventana = true}) es la media del PSR en ventanas de
+\VAR{ventanas_psr | join(", ")} años, cada una frente a un Sharpe anual de referencia de
+\VAR{psr_referencia} (\texttt{psr\_referencia}): un fondo solo puntúa alto si bate de forma
+sostenida, en varios horizontes, ese listón.
+\BLOCK{else}
+El criterio de ranking de la selección es el PSR (\texttt{criterio\_ranking =
+"\VAR{criterio_ranking}"}) frente a 0 en la ventana completa.
+\BLOCK{endif}
+
+\subsection{Análisis de estilo y clasificación por tipo de activo (Sharpe, 1992)}
+Cada fondo se explica como combinación lineal restringida de índices de estilo, más un residuo que
+se interpreta como liquidez:
+\[
+r_{\text{fondo},t} - r_{f,t} = \sum_{i=1}^{k} w_i \left(r_{\text{factor }i,t} - r_{f,t}\right) + \varepsilon_t,
+\qquad w_i \geq 0,\ \ \sum_i w_i \leq 1,
+\]
+resuelto por mínimos cuadrados con restricciones (SLSQP). El tipo de activo de cada fondo se asigna
+a partir de estos pesos de estilo cuando $R^2 \geq 0{,}5$, y a partir de la composición declarada en
+caso contrario.
+
+\subsection{Calidad de datos, selección: filtros y duplicados}
+\BLOCK{if excluir_anomalos}
+Antes de los filtros de riesgo se excluyen (\texttt{excluir\_anomalos = true}) las series con
+volatilidad anual superior al 200\,\% o con alguna rentabilidad semanal de magnitud superior al
+50\,\%, síntoma de errores de precio.
+\BLOCK{endif}
+Sobre los \VAR{con_datos_n} fondos con datos se aplican: (i) cobertura mínima
+(\VAR{cobertura_minima_pct}\,\% de semanas con dato), volatilidad entre
+\VAR{volatilidad_minima_pct}\,\% y \VAR{volatilidad_maxima_pct}\,\% anual, caída máxima inferior al
+\VAR{drawdown_maximo_pct}\,\%; (ii) eliminación de duplicados (correlación $\geq$
+\VAR{correlacion_duplicados} entre sí, enlace completo); (iii) reducción a
+\VAR{numero_fondos_cluster} posiciones por clustering jerárquico de Ward (enlace
+\texttt{\VAR{enlace_hrp}}).
+\BLOCK{if usar_histeresis}
+Solo en el \textbf{backtest walk-forward} (no en esta construcción puntual) la elección del mejor
+fondo de cada cluster incorpora además \textbf{histéresis} (\texttt{usar\_histeresis = true}): un
+fondo que ya estaba en la cartera del periodo anterior conserva su cluster salvo que el mejor
+candidato le supere en \VAR{margen_histeresis_pct}\,\% de puntuación, lo que reduce la rotación de un
+periodo a otro.
+\BLOCK{endif}
+
+\subsection{Matriz de covarianzas: \emph{shrinkage} de Ledoit-Wolf (2004)\BLOCK{if usar_corr_estres} y correlación de estrés\BLOCK{endif}}
+Con pocas observaciones semanales para estimar una matriz de covarianzas, el estimador muestral $S$
+es ruidoso. Ledoit y Wolf (2004) proponen encogerlo hacia la matriz identidad sobre la correlación,
+con intensidad óptima $\delta^\star$:
+\[
+\hat{C} = \delta^\star \, \mu I + (1-\delta^\star)\, S.
+\]
+En esta cartera la intensidad estimada es $\delta^\star = \VAR{intensidad_pct}\,\%$.
+\BLOCK{if usar_corr_estres}
+Además (\texttt{usar\_corr\_estres = true}), la correlación final usada por HRP es, elemento a
+elemento, el máximo entre la correlación normal y la calculada en el periodo de estrés
+\VAR{estres_inicio}--\VAR{estres_fin}: la correlación de cola no puede ser más baja que la observada
+en ese episodio real. Un fondo sin historial en ese periodo conserva su correlación normal.
+\BLOCK{endif}
+
+\subsection{Hierarchical Risk Parity (López de Prado, 2016)\BLOCK{if credito.activo} y límite de crédito\BLOCK{endif}}
+HRP ordena los activos por \textbf{clustering jerárquico} sobre la distancia de correlación
+$d_{ij} = \sqrt{\tfrac{1}{2}(1-\rho_{ij})}$ (figura~\ref{fig:dendrograma}) y reparte el peso de cada
+nodo por \textbf{bisección recursiva} en proporción inversa a la varianza de cada subgrupo,
+$\alpha = 1 - V_L/(V_L+V_R)$. Sobre el resultado se aplica un \textbf{techo del
+\VAR{peso_maximo_pct}\,\%} por fondo.
+\BLOCK{if credito.activo}
+Además, un \textbf{techo del \VAR{credito.techo_pct}\,\%} al peso conjunto del bloque de renta fija
+de crédito (subcategoría con palabras clave o exposición de estilo a crédito corporativo EUR $\geq$
+\VAR{credito_umbral_estilo_pct}\,\%), redistribuyendo cualquier exceso proporcionalmente al resto.
+\BLOCK{endif}
+\BLOCK{if suelo == "marginal"}
+El suelo de peso es \textbf{``marginal''} (\texttt{suelo = "marginal"}): sin mínimo fijo por fondo,
+se elimina iterativamente el fondo cuya contribución marginal al Sharpe de la cartera,
+$\mathrm{Sharpe}_i - \rho(i,\text{cartera})\cdot\mathrm{Sharpe}_{\text{cartera}}$, sea más negativa,
+recalculando los pesos tras cada eliminación, hasta que ninguna sea negativa o se alcance el mínimo
+de \textbf{\VAR{minimo_fondos} fondos} (\texttt{minimo\_fondos}). De los \VAR{preseleccionados_n}
+fondos preseleccionados, \VAR{preseleccionados_n - cartera_n} fueron eliminados por este criterio.
+\BLOCK{else}
+El suelo de peso es \textbf{fijo} (\texttt{suelo = "fijo"}): \VAR{peso_minimo_pct}\,\% por fondo
+seleccionado.
+\BLOCK{endif}
+
+% ==================================================================
+\section{Composición de la cartera}
+\label{sec:composicion}
+
+La tabla~\ref{tab:composicion} muestra el peso final, la contribución al riesgo total y la
+\textbf{concentración de riesgo} (contribución al riesgo dividida entre el peso: valores por debajo
+de 1 indican posiciones ``núcleo'' que diversifican, por encima de 1 indican posiciones ``satélite''
+que concentran riesgo). Los códigos F1--F\VAR{cartera_n} se usan en el resto del informe y se
+corresponden con el orden de la tabla.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Composición de la cartera: peso, contribución al riesgo y concentración}
+\label{tab:composicion}
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+\textbf{Cód.} & \textbf{Fondo} & \textbf{Peso (\%)} & \textbf{Contrib.\ riesgo (\%)} & \textbf{Concentración} \\
+\midrule
+\BLOCK{for f in fondos}
+\VAR{f.codigo} & \VAR{f.nombre} & \VAR{f.peso_pct} & \VAR{f.contrib_pct} & \VAR{f.concentracion} \\
+\BLOCK{endfor}
+\midrule
+\textbf{Total} & & \textbf{100{,}0} & \textbf{100{,}0} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Métricas de rentabilidad y riesgo por fondo (ventana de estimación, anualizadas)}
+\label{tab:metricas}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+\textbf{Cód.} & \textbf{Rent.\ (\%)} & \textbf{Vol.\ aj.\ (\%)} & \textbf{Sharpe aj.} & \textbf{PSR (\%)} & \textbf{Sortino} & \textbf{Caída máx.\ (\%)} & \textbf{TER (\%)} \\
+\midrule
+\BLOCK{for f in fondos}
+\VAR{f.codigo} & \VAR{f.rent_pct} & \VAR{f.vol_aj_pct} & \VAR{f.sharpe_aj} & \VAR{f.psr_pct} & \VAR{f.sortino} & \VAR{f.dd_pct} & \VAR{f.ter_pct} \\
+\BLOCK{endfor}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\BLOCK{if imagenes.pesos}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\textwidth]{\VAR{imagenes.pesos}}
+\caption{Peso y contribución al riesgo de cada posición.}
+\label{fig:pesos}
+\end{figure}
+\BLOCK{endif}
+
+% ==================================================================
+\section{Riesgo de la cartera}
+\label{sec:riesgo}
+
+\subsection{Exposición por tipo de activo y por estilo}
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Exposición por tipo de activo (clasificación) y por estilo (regresión de Sharpe, 1992)}
+\label{tab:exposicion}
+\begin{tabular}{@{}lr@{\hspace{1.2cm}}lr@{}}
+\toprule
+\textbf{Tipo de activo} & \textbf{Peso (\%)} & \textbf{Factor de estilo} & \textbf{Exposición (\%)} \\
+\midrule
+\BLOCK{for i in range([exposicion_tipo | length, exposicion_estilo | length] | max)}
+\VAR{exposicion_tipo[i].nombre if i < exposicion_tipo | length else ""} & \VAR{exposicion_tipo[i].pct if i < exposicion_tipo | length else ""} & \VAR{exposicion_estilo[i].nombre if i < exposicion_estilo | length else ""} & \VAR{exposicion_estilo[i].pct if i < exposicion_estilo | length else ""} \\
+\BLOCK{endfor}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\BLOCK{if credito.activo}
+El bloque de renta fija de crédito (\VAR{credito.fondos | join(", ")}) suma el
+\VAR{credito.peso_pct}\,\% del capital, \BLOCK{if credito.vinculante}en el techo del
+\VAR{credito.techo_pct}\,\%\BLOCK{else}por debajo del techo del \VAR{credito.techo_pct}\,\%
+configurado\BLOCK{endif}.
+\BLOCK{endif}
+
+\subsection{Estructura de correlaciones y clustering}
+
+La tabla~\ref{tab:correlaciones} muestra la matriz de correlaciones semanales entre las
+\VAR{cartera_n} posiciones (tras el \emph{shrinkage} de Ledoit-Wolf\BLOCK{if usar_corr_estres} y la
+correlación de estrés\BLOCK{endif}), y la figura~\ref{fig:dendrograma} su estructura jerárquica.
+\BLOCK{if superlativos.mas_conectado}
+\VAR{superlativos.mas_conectado.nombre} es el nodo más conectado de la cartera (correlación media de
+\VAR{superlativos.mas_conectado_valor} con el resto), mientras que
+\VAR{superlativos.mas_aislado.nombre} es el más aislado (correlación media de
+\VAR{superlativos.mas_aislado_valor}).
+\BLOCK{endif}
+
+\begin{table}[htbp]
+\centering
+\caption{Matriz de correlaciones semanales entre las posiciones}
+\label{tab:correlaciones}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}l*{\VAR{cartera_n}}{r}@{}}
+\toprule
+ & \VAR{correlaciones.codigos | join(" & ")} \\
+\midrule
+\BLOCK{for fila in correlaciones.filas}
+\VAR{fila.codigo} & \VAR{fila.valores | join(" & ")} \\
+\BLOCK{endfor}
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\BLOCK{if imagenes.correlaciones}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.78\textwidth]{\VAR{imagenes.correlaciones}}
+\caption{Mapa de calor de la matriz de correlaciones semanales de la tabla~\ref{tab:correlaciones}.}
+\label{fig:correlaciones}
+\end{figure}
+\BLOCK{endif}
+
+\BLOCK{if imagenes.dendrograma}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{\VAR{imagenes.dendrograma}}
+\caption{Estructura jerárquica (enlace de Ward sobre la distancia de correlación) de las
+\VAR{cartera_n} posiciones finales.}
+\label{fig:dendrograma}
+\end{figure}
+\BLOCK{endif}
+
+% ==================================================================
+\section{Rentabilidad y validación fuera de muestra}
+\label{sec:backtest}
+
+\subsection{Resultados en la ventana de estimación}
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{@{}lr@{}}
+\toprule
+\textbf{Métrica (ventana \VAR{ventana_inicio} a \VAR{ventana_fin})} & \textbf{Valor} \\
+\midrule
+Volatilidad esperada (ex ante, matriz de covarianzas) & \VAR{vol_esperada_pct}\,\% \\
+Rentabilidad anualizada realizada & \VAR{rent_hist_pct}\,\% \\
+Volatilidad anualizada realizada & \VAR{vol_hist_pct}\,\% \\
+Sharpe realizado & \VAR{sharpe_hist} \\
+Caída máxima realizada & \VAR{dd_hist_pct}\,\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+Estas cifras tienen, por construcción, un sesgo optimista (misma ventana usada para seleccionar y
+estimar la covarianza) y se incluyen solo como diagnóstico de coherencia.
+
+\subsection{Backtest walk-forward (fuera de muestra)}
+\BLOCK{if backtest.activo}
+El backtest recalcula todo el proceso en cada uno de \VAR{backtest.n_rebalanceos} rebalanceos
+\VAR{rebalanceo}, usando en cada punto solo información disponible hasta ese momento. Junto al Sharpe
+se reporta su error estándar (Lo, 2002, caso iid) y su intervalo de confianza al 95\,\%, y un test de
+diferencia de Sharpe frente a HRP (Jobson y Korkie, 1981, con la corrección de Memmel, 2003).
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Backtest walk-forward, \VAR{backtest.n_rebalanceos} rebalanceos (\VAR{backtest.n_semanas} semanas), fuera de muestra}
+\label{tab:backtest}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+\textbf{Método} & \textbf{Rent.\ anual (\%)} & \textbf{Vol.\ anual (\%)} & \textbf{Sharpe} & \textbf{IC 95\,\%} & \textbf{p-valor JK vs.\ HRP} & \textbf{Caída máx.\ (\%)} & \textbf{Rotación media (\%)} \\
+\midrule
+\BLOCK{for fila in backtest.filas}
+\BLOCK{if fila.es_hrp}\textbf{\VAR{fila.metodo}}\BLOCK{else}\VAR{fila.metodo}\BLOCK{endif} & \VAR{fila.rent_pct} & \VAR{fila.vol_pct} & \VAR{fila.sharpe} & \VAR{fila.ic95} & \VAR{fila.jk_p} & \VAR{fila.dd_pct} & \VAR{fila.rotacion_pct} \\
+\BLOCK{endfor}
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\noindent HRP obtiene un Sharpe de \VAR{backtest.sharpe_hrp} con IC 95\,\% \VAR{backtest.ic95_hrp}.
+\BLOCK{if backtest.jk_significativo}
+Al menos una de las diferencias de Sharpe frente a HRP (test de Jobson-Korkie/Memmel) es
+significativa al 5\,\% (p-valor mínimo \VAR{backtest.jk_min_p}).
+\BLOCK{else}
+Ninguna de las diferencias de Sharpe frente a HRP (test de Jobson-Korkie/Memmel) es significativa al
+5\,\% (p-valor mínimo \VAR{backtest.jk_min_p}): con \VAR{backtest.n_semanas} semanas de backtest, el
+test no tiene potencia estadística suficiente para distinguir entre métodos con confianza, aunque el
+ranking puntual de Sharpe favorezca a uno de ellos.
+\BLOCK{endif}
+La rotación media de HRP es del \VAR{backtest.rotacion_hrp_pct}\,\%: en el concurso de simulación no
+hay costes de transacción, pero en gestión real habría que descontar este efecto del resultado.
+
+\BLOCK{if imagenes.backtest}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{\VAR{imagenes.backtest}}
+\caption{Evolución del valor de la cartera (base 100) bajo los distintos métodos, backtest
+walk-forward fuera de muestra.}
+\label{fig:backtest}
+\end{figure}
+\BLOCK{endif}
+\BLOCK{else}
+No se ha ejecutado en esta corrida (desactivado con \texttt{--sin-backtest} o histórico
+insuficiente).
+\BLOCK{endif}
+
+\subsection{Mapa riesgo-rentabilidad frente al universo}
+\BLOCK{if imagenes.riesgo_rentabilidad}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{\VAR{imagenes.riesgo_rentabilidad}}
+\caption{Posición de los \VAR{cartera_n} fondos finales (resaltados) frente al resto del universo
+filtrado, en términos de volatilidad ajustada por autocorrelación y rentabilidad anual en la ventana
+de estimación.}
+\label{fig:riesgorentabilidad}
+\end{figure}
+\BLOCK{endif}
+
+\subsection{Frontera eficiente de las posiciones seleccionadas}
+\BLOCK{if imagenes.frontera_eficiente}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{\VAR{imagenes.frontera_eficiente}}
+\caption{Frontera eficiente de los \VAR{cartera_n} fondos finales (sin límites de peso), con la
+cartera HRP final, la cartera de mínima varianza y la de máximo Sharpe (tangente) señaladas, junto
+con la posición individual de cada fondo.}
+\label{fig:frontera}
+\end{figure}
+\BLOCK{endif}
+La cartera HRP queda, de forma característica del método, ligeramente por dentro de la frontera: el
+coste esperado de renunciar a invertir las rentabilidades esperadas, que HRP ignora deliberadamente
+por ser el \emph{input} más ruidoso del modelo.
+
+% ==================================================================
+\section{Justificación de las posiciones}
+\label{sec:posiciones}
+
+Para cada posición se da primero la justificación \textbf{matemática} (qué mide el modelo) y después
+la \textbf{cualitativa} (categoría declarada, gestora y papel que cumple en la cartera).
+
+\BLOCK{for f in fondos}
+\subsection*{\VAR{f.codigo} -- \VAR{f.nombre} (\VAR{f.peso_pct}\,\%)}
+\textbf{Matemática:} \VAR{f.tipo}, contribuye el \VAR{f.contrib_pct}\,\% del riesgo total de la
+cartera (concentración \VAR{f.concentracion}). Volatilidad ajustada \VAR{f.vol_aj_pct}\,\%\BLOCK{if f.ajuste_lo} (tras el ajuste de Lo, 2002, por autocorrelación $\rho=\VAR{f.autocorr}$, superior al
+umbral \VAR{autocorrelacion_alerta}: la volatilidad bruta era \VAR{f.vol_anual_pct}\,\%)\BLOCK{endif},
+Sharpe ajustado \VAR{f.sharpe_aj}, PSR \VAR{f.psr_pct}\,\%, Sortino \VAR{f.sortino} y caída máxima de
+\VAR{f.dd_pct}\,\% en la ventana de estimación.
+\BLOCK{if f.corr_max_nombre}
+Su correlación más alta es con \VAR{f.corr_max_nombre} ($\rho=\VAR{f.corr_max_valor}$).
+\BLOCK{endif}
+\BLOCK{if f.factores}
+Exposición de estilo: \VAR{f.factores_texto} (R$^2=\VAR{f.r2}$).
+\BLOCK{else}
+Sin exposición de estilo relevante a ningún factor ($R^2=\VAR{f.r2}$): no explicado por los índices
+tradicionales de mercado.
+\BLOCK{endif}
+\BLOCK{if f.en_techo}
+Está en el techo de peso (\VAR{peso_maximo_pct}\,\%).
+\BLOCK{elif f.en_suelo}
+Está en el suelo de peso fijo (\VAR{peso_minimo_pct}\,\%).
+\BLOCK{endif}
+\textbf{Cualitativa:}\BLOCK{if f.subcategoria} subcategoría IronIA ``\VAR{f.subcategoria}''\BLOCK{if f.gestora},\BLOCK{endif}\BLOCK{endif}\BLOCK{if f.gestora} gestionado por \VAR{f.gestora}\BLOCK{endif}\BLOCK{if f.ter_pct != "n/d"} (TER \VAR{f.ter_pct}\,\%)\BLOCK{endif}\BLOCK{if f.inversion_minima_texto}, inversión mínima de \VAR{f.inversion_minima_texto}\,\texteuro\BLOCK{endif}\BLOCK{if not f.subcategoria and not f.gestora and f.ter_pct == "n/d" and not f.inversion_minima_texto} sin datos cualitativos adicionales disponibles para este fondo\BLOCK{endif}.
+
+\BLOCK{endfor}
+
+\BLOCK{if cola}
+% ==================================================================
+\section{Riesgos de cola no capturados por la ventana de estimación}
+\label{sec:cola}
+
+Las siguientes posiciones, identificadas por palabras clave en su nombre o subcategoría
+(\texttt{informe.palabras\_riesgo\_cola} en \texttt{config.toml}), pertenecen a estrategias cuyo
+riesgo principal no es de mercado y por tanto puede estar pobremente representado en
+\VAR{ventana_anios} años de histórico de precios:
+
+\begin{itemize}[itemsep=3pt]
+\BLOCK{for g in cola}
+  \item \textbf{\VAR{g.palabra}} (\VAR{g.fondos | join(", ")}): \VAR{g.advertencia}
+\BLOCK{endfor}
+\end{itemize}
+\BLOCK{endif}
+
+% ==================================================================
+\section{Limitaciones y advertencias}
+
+\begin{itemize}[itemsep=3pt]
+  \item \textbf{Sesgo de supervivencia:} el universo de \VAR{universo_n} fondos son los que existen
+  hoy en IronIA; el backtest es, en términos absolutos, optimista.
+  \BLOCK{if backtest.activo}
+  \item \textbf{Significatividad estadística limitada:} con \VAR{backtest.n_semanas} semanas de
+  backtest, el test de Jobson-Korkie frente a HRP \BLOCK{if backtest.jk_significativo}es significativo
+  para al menos un método (p-valor mínimo \VAR{backtest.jk_min_p})\BLOCK{else}no es significativo al
+  5\,\% para ningún método alternativo (p-valor mínimo \VAR{backtest.jk_min_p})\BLOCK{endif}. El
+  ranking de Sharpe entre métodos debe leerse con esta cautela.
+  \item \textbf{Rotación:} la composición cambia de forma relevante entre rebalanceos (rotación media
+  de HRP en torno al \VAR{backtest.rotacion_hrp_pct}\,\%). El concurso de simulación no parece
+  penalizar esto con costes de transacción, pero en gestión real habría que descontarlos.
+  \BLOCK{endif}
+  \BLOCK{if credito.activo}
+  \item \textbf{Filtro de bloque de crédito por palabras clave:} el criterio que identifica el
+  bloque de renta fija de crédito es una aproximación por subcategoría y estilo, no una
+  clasificación exacta; conviene revisarlo si la composición cambia sustancialmente.
+  \BLOCK{endif}
+  \item \textbf{Fuentes de datos no oficiales:} los precios proceden de fuentes públicas (Yahoo
+  Finance / Morningstar), no de los proveedores oficiales de los fondos.
+  \item \textbf{Persistencia del rendimiento:} el ranking se basa en historia de rentabilidad y
+  riesgo; la evidencia académica sobre persistencia del rendimiento de los fondos es débil.
+  \item \textbf{Categoría declarada frente a estilo real:} la categoría de Morningstar/IronIA no
+  siempre coincide con el riesgo de mercado real revelado por el análisis de estilo; las conclusiones
+  cualitativas de este informe se basan, cuando difieren, en el estilo estimado por regresión.
+\end{itemize}
+
+% ==================================================================
+\section{Referencias}
+
+\begin{itemize}[itemsep=2pt]
+  \item Lo, A. (2002). \emph{The Statistics of Sharpe Ratios}. Financial Analysts Journal.
+  \item Getmansky, M., Lo, A. y Makarov, I. (2004). \emph{An Econometric Model of Serial Correlation
+  and Illiquidity in Hedge Fund Returns}. Journal of Financial Economics.
+  \item Bailey, D. y López de Prado, M. (2012). \emph{The Sharpe Ratio Efficient Frontier}. Journal
+  of Risk.
+  \item Sharpe, W. (1992). \emph{Asset Allocation: Management Style and Performance Measurement}.
+  Journal of Portfolio Management.
+  \item Ledoit, O. y Wolf, M. (2004). \emph{Honey, I Shrunk the Sample Covariance Matrix}. Journal of
+  Portfolio Management.
+  \item López de Prado, M. (2016). \emph{Building Diversified Portfolios that Outperform Out of
+  Sample}. Journal of Portfolio Management.
+  \item Jobson, J. D. y Korkie, B. M. (1981). \emph{Performance Hypothesis Testing with the Sharpe
+  and Treynor Measures}. Journal of Finance.
+  \item Memmel, C. (2003). \emph{Performance Hypothesis Testing with the Sharpe Ratio}. Finance
+  Letters.
+\end{itemize}
+
+\end{document}

@@ -1,0 +1,122 @@
+# ============================================================
+#  Configuración del pipeline de selección de fondos
+#  Todas las decisiones "discrecionales" del modelo están aquí,
+#  para que queden explícitas y puedas cambiarlas sin tocar código.
+# ============================================================
+
+[datos]
+# Fuente de datos: "yahoo" (sin navegador, recomendado para empezar),
+# "morningstar" (mstarpy, más datos de composición; necesita Google Chrome instalado),
+# "csv" (tus propios precios en datos/precios.csv) o "demo" (datos sintéticos para probar).
+fuente = "yahoo"
+archivo_universo = "universo_ironia.csv"   # 3.885 fondos disponibles en IronIA (uno por fondo)
+descargar_composicion = false  # true = pide también ficha y composición a Yahoo (el triple de lento).
+                               # No hace falta: el tipo de activo sale del análisis de estilo y
+                               # la categoría/gastos vienen del universo de IronIA
+archivo_precios_csv = "datos/precios.csv"   # solo si fuente = "csv"
+anios_historico = 5          # años de histórico a descargar (backtest necesita > ventana)
+carpeta_cache = "cache"
+dias_validez_cache = 7       # vuelve a descargar si la caché tiene más días (ajustado a uso semanal)
+dias_validez_cache_fallos = 30  # los fondos que fallan (ISIN no encontrado, deslistado...) no se
+                                 # reintentan hasta pasados estos días, para no perder tiempo cada
+                                 # ejecución con los mismos fondos muertos
+moneda_base = "EUR"          # todo se convierte a esta moneda
+pausa_entre_descargas = 0.5  # segundos, para no saturar al proveedor
+
+[metricas]
+frecuencia = "W-FRI"         # rendimientos semanales: evita el desfase horario entre
+                             # fondos de EE. UU., Europa y Asia que distorsiona las
+                             # correlaciones diarias
+ventana_anios = 3            # ventana de estimación
+tipo_libre_riesgo = 0.02     # anual. Se usa si rf_fuente = "fijo", o como respaldo si
+                             # falla la descarga del €STR / fuera del histórico del €STR
+tipo_estres = 0.04           # anual. Tipo libre de riesgo "de estrés" para el Sharpe en estado_cartera.md
+cobertura_minima = 0.90      # % mínimo de semanas con dato dentro de la ventana
+autocorrelacion_alerta = 0.20  # por encima, se "desuaviza" la volatilidad (Getmansky-Lo-Makarov)
+rf_fuente = "estr"           # "estr" = descarga el €STR diario del BCE y lo compone a la
+                             # frecuencia del pipeline; "fijo" = usa tipo_libre_riesgo constante.
+                             # Si la descarga falla, se usa tipo_libre_riesgo y se avisa.
+
+[filtros]
+volatilidad_minima = 0.01    # anual. Por debajo = monetario/liquidez: no mejora el Sharpe
+                             # y distorsiona HRP (se llevaría casi todo el peso)
+volatilidad_maxima = 0.40    # anual. Excluye productos extremos (apalancados, cripto…)
+psr_minimo = 0.0             # 0 = desactivado. Probabilistic Sharpe mínimo (0-1)
+drawdown_maximo = 0.60       # excluye fondos con caídas máximas superiores
+excluir_anomalos = true      # excluye series con volatilidad anual > 200% o alguna
+                             # rentabilidad semanal con |r| > 50% (datos de precio erróneos)
+
+[seleccion]
+correlacion_duplicados = 0.95  # fondos con ρ >= este valor se consideran "el mismo fondo"
+numero_fondos = 12             # nº de clusters finales = nº de fondos en cartera
+criterio_ranking = "psr"       # "psr" (Probabilistic Sharpe), "sharpe" o "sortino"
+# Garantizar algún fondo de cada tipo de activo presente en el universo
+# (el clustering ya tiende a hacerlo; esto lo asegura)
+forzar_diversidad_tipos = true
+ranking_multiventana = true  # si true y criterio_ranking = "psr", rankea por la media del
+                             # PSR en ventanas_psr años (en vez del PSR a 3 años frente a 0)
+ventanas_psr = [1, 2, 3]     # años de cada sub-ventana para el ranking multi-ventana
+psr_referencia = 0.5         # Sharpe anual de referencia para ese PSR (frente a 0 casi todos
+                             # los fondos buenos salen ≈100% y el ranking no discrimina)
+usar_histeresis = true       # en el backtest, un fondo ya en cartera conserva su cluster salvo
+                             # que el mejor candidato le supere en margen_histeresis
+margen_histeresis = 0.05     # margen de puntuación (criterio de ranking) para desbancar a un
+                             # fondo que ya estaba en la cartera anterior
+
+[cartera]
+metodo = "hrp"               # "hrp", "inversa_vol", "min_var", "max_sharpe", "equiponderada"
+enlace_hrp = "ward"          # "single" (paper original), "ward", "average", "complete"
+peso_maximo = 0.20
+peso_minimo = 0.03          # suelo para cada fondo seleccionado (si suelo = "fijo")
+decimales_peso = 1           # redondeo de los pesos finales (en %)
+banda_rebalanceo = 0.03      # diferencia de peso real-sombra a partir de la cual se marca "FUERA DE BANDA"
+suelo = "marginal"           # "fijo" = usa peso_minimo; "marginal" = sin suelo fijo (peso_minimo
+                             # se ignora): tras calcular los pesos, elimina iterativamente el fondo
+                             # con contribución marginal al Sharpe negativa (Sharpe_i − ρ(i,cartera)·Sharpe_cartera < 0)
+minimo_fondos = 8            # nº mínimo de fondos al que puede llegar el suelo "marginal"
+limitar_credito = true       # aplica un techo al peso conjunto del bloque de renta fija de crédito
+peso_maximo_credito = 0.50   # techo al bloque de crédito; el exceso se reparte proporcionalmente
+credito_palabras = ["Corporativa", "Alto Rendimiento", "Subordinad", "Convertibles",
+                    "Flexible", "Emergente", "Diversificada"]  # un fondo es "de crédito" si su
+                             # subcategoria_universo contiene alguna de estas palabras
+credito_umbral_estilo = 0.30 # o si su estilo_RF Corporativa EUR (análisis de estilo) >= este umbral
+usar_corr_estres = true      # usa corr = max(corr_normal, corr_estres) elemento a elemento
+estres_inicio = "2022-01-01" # ventana de estrés para la correlación "de cola"
+estres_fin = "2022-12-31"    # (si un fondo no tiene datos en esta ventana, se usa su correlación normal)
+
+[backtest]
+activar = true
+rebalanceo = "QE"            # "ME" mensual, "QE" trimestral
+metodos = ["hrp", "inversa_vol", "min_var", "max_sharpe", "equiponderada"]
+
+[estilo]
+# Análisis de estilo por rentabilidades (Sharpe, 1992): cada fondo se explica como
+# combinación de estos índices (pesos >= 0, suma <= 1; el resto = liquidez).
+# Se usa para clasificar RV / RF / mixto / otros sin depender de datos de composición.
+# Tickers de Yahoo de ETFs en EUR (Xetra). Puedes cambiarlos o añadir.
+[estilo.factores]
+"RV Desarrollados" = "EUNL.DE"     # iShares Core MSCI World
+"RV Emergentes"    = "IS3N.DE"     # iShares Core MSCI EM IMI
+"RF Gobierno EUR"  = "EUNH.DE"     # iShares Core Euro Govt Bond
+"RF Corporativa EUR" = "EUN5.DE"   # iShares Core € Corp Bond
+"Oro"              = "4GLD.DE"     # Xetra-Gold
+
+[estilo.grupos]
+# a qué gran clase pertenece cada factor
+"RV Desarrollados" = "RV"
+"RV Emergentes" = "RV"
+"RF Gobierno EUR" = "RF"
+"RF Corporativa EUR" = "RF"
+"Oro" = "Materias primas"
+
+[salida]
+carpeta = "salida"
+
+[informe]
+# Informe PDF generado dinámicamente (informe_pdf.py) a partir de la cartera de cada
+# ejecución: ningún número ni nombre de fondo está escrito a mano en la plantilla.
+# Palabras (en nombre o subcategoria_universo, sin distinguir mayúsculas) que marcan un
+# fondo para la sección "Riesgos de cola no capturados por la ventana de estimación":
+# estrategias cuyo riesgo principal no es de mercado y por tanto apenas se ve en 3 años
+# de histórico (bonos catástrofe, arbitraje de fusiones, primas de estilo...).
+palabras_riesgo_cola = ["Cat Bond", "Insurance", "Merger", "Arbitrage", "Event", "Frontier", "Style Premia"]

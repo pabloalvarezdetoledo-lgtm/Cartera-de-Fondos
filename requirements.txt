@@ -1,0 +1,11 @@
+numpy>=1.24
+pandas>=2.1
+scipy>=1.11
+matplotlib>=3.7
+openpyxl>=3.1
+pillow>=10.0
+yfinance>=0.2.54
+requests>=2.31   # descarga del €STR (BCE)
+jinja2>=3.1      # plantilla del informe PDF (informe_pdf.py)
+# opcional, solo si usas fuente = "morningstar" (necesita Google Chrome instalado):
+# mstarpy>=11

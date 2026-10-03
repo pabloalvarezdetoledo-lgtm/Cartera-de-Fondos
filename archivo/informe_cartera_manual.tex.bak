@@ -1,0 +1,683 @@
+\documentclass[11pt,a4paper]{article}
+
+% ------------------------------------------------------------------
+% Paquetes
+% ------------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{textcomp}
+\usepackage{lmodern}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage[hidelinks,colorlinks=false]{hyperref}
+
+\captionsetup{font=small,labelfont=bf}
+\renewcommand{\arraystretch}{1.15}
+
+\definecolor{azulinf}{HTML}{2A3F8F}
+\definecolor{grisinf}{HTML}{555555}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{grisinf}{Cartera cuantitativa de fondos -- Informe de posiciones}}
+\fancyhead[R]{\small\textcolor{grisinf}{\thepage}}
+\renewcommand{\headrulewidth}{0.3pt}
+
+% ------------------------------------------------------------------
+\title{\textcolor{azulinf}{\Huge Cartera cuantitativa de fondos}\\[0.3cm]
+\Large Resumen de posiciones, métricas de rentabilidad y riesgo,\\ y justificación matemática y cualitativa}
+\author{Metodología cuantitativa HRP sobre universo IronIA (CFA Society Spain)}
+\date{Ventana de estimación: 2023-10-06 a 2026-09-25\\ Informe generado el 2 de octubre de 2026}
+
+% ==================================================================
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Concepto} & \textbf{Valor} \\
+\midrule
+Fondos en el universo analizado & 3\,885 (3\,279 con histórico suficiente) \\
+Fondos preseleccionados por clustering & 12 \\
+Fondos en la cartera final (tras suelo marginal) & 8 \\
+Método de construcción de la cartera & Hierarchical Risk Parity (HRP) \\
+Volatilidad esperada (ex ante, covarianza estimada) & 2{,}26\,\% anual \\
+Sharpe realizado fuera de muestra (backtest walk-forward) & 1{,}91\ \ (IC 95\,\%: [0{,}50,\ 3{,}32]) \\
+Caída máxima fuera de muestra (backtest walk-forward) & $-2{,}47\,\%$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\clearpage
+\tableofcontents
+\thispagestyle{empty}
+\clearpage
+
+% ==================================================================
+\section{Resumen ejecutivo}
+
+La cartera está compuesta por \textbf{8 fondos} obtenidos en dos etapas a partir de un universo de
+3\,885 fondos disponibles en la plataforma IronIA (3\,279 con histórico descargable): primero una
+selección algorítmica sin criterio discrecional -- ranking por \emph{Probabilistic Sharpe Ratio}
+(PSR) a varias ventanas, eliminación de duplicados por correlación y reducción a 12 posiciones por
+clustering jerárquico --, y después una poda adicional de esas 12 posiciones a 8 mediante un criterio
+de \textbf{contribución marginal al Sharpe} (sección~\ref{sec:metodologia}). Los pesos se obtienen con
+\emph{Hierarchical Risk Parity} (HRP) sobre una matriz de covarianzas con \emph{shrinkage} de
+Ledoit-Wolf, cuya correlación incorpora además el máximo frente a un periodo de estrés (2022), con un
+techo del 20\,\% por fondo y un techo adicional del 50\,\% para el bloque conjunto de renta fija de
+crédito.
+
+\textbf{Perfil de riesgo y rentabilidad.} En la ventana de estimación (156 semanas, octubre de 2023 a
+septiembre de 2026) la cartera resultante exhibe una rentabilidad anualizada del 10{,}5\,\%, una
+volatilidad del 2{,}09\,\% y un Sharpe de 3{,}86, con una caída máxima de solo $-2{,}1\,\%$. Estas
+cifras corresponden al periodo \emph{usado para construir} la cartera y no deben interpretarse como
+una expectativa de rentabilidad futura. El dato más relevante para juzgar el método es el
+\textbf{backtest walk-forward fuera de muestra} (2 años, 8 rebalanceos trimestrales, selección y
+pesos recalculados en cada trimestre solo con información pasada): ahí HRP obtiene un Sharpe de
+\textbf{1{,}91} (error estándar 0{,}72; intervalo de confianza al 95\,\%: $[0{,}50,\ 3{,}32]$, el único
+de los seis métodos comparados cuyo intervalo no cruza el cero) y una caída máxima de $-2{,}47\,\%$,
+frente a inversa de la volatilidad (Sharpe 1{,}88), mínima varianza (1{,}85), máximo Sharpe encogido
+(1{,}48), 1/N sobre los seleccionados (1{,}57) y 1/N sobre todo el universo (0{,}95) -- véase la
+sección~\ref{sec:backtest}.
+
+\textbf{Composición.} La cartera está dominada por \textbf{cuatro posiciones, las cuatro exactamente
+en el techo del 20\,\%} (deuda de mercados frontera, renta fija flexible global cubierta, un fondo
+\emph{event-driven} y un bono catástrofe), que concentran el \textbf{80\,\% del capital} pero solo el
+\textbf{47{,}8\,\% del riesgo} total: el techo de peso está activo y vinculante de forma simultánea en
+cuatro posiciones, algo que no ocurría en versiones anteriores de esta cartera. El 20\,\% de capital
+restante se reparte en cuatro posiciones satélite -- dos estrategias multiestrategia/sistemáticas,
+renta variable emergente y oro -- que concentran el \textbf{52{,}2\,\% del riesgo} con pesos muy
+inferiores, consecuencia directa de que el nuevo suelo ``marginal'' ya no ancla ningún fondo a un
+mínimo fijo (sección~\ref{sec:riesgo}).
+
+% ==================================================================
+\section{Metodología cuantitativa}
+\label{sec:metodologia}
+
+Todas las decisiones discrecionales del modelo (ventana, tipo libre de riesgo, umbrales, límites de
+peso) están parametrizadas y documentadas en \texttt{config.toml}; aquí se resumen los fundamentos
+matemáticos de cada etapa, incluyendo los seis controles añadidos en la versión vigente del pipeline.
+
+\subsection{Datos, frecuencia y tipo libre de riesgo}
+Los precios se convierten a rentabilidad total en EUR y se agregan a frecuencia \textbf{semanal}
+(viernes). Trabajar en semanal, y no en diario, evita que el desfase horario entre fondos domiciliados
+en Europa, EE.\,UU.\ y Asia distorsione artificialmente las correlaciones estimadas. La ventana de
+estimación es de 3 años (156 observaciones semanales). El tipo libre de riesgo (\texttt{rf\_fuente =
+"estr"}) ya no es un valor fijo: se descarga el \,\texteuro STR diario publicado por el BCE y se
+compone a frecuencia semanal, usándose como serie temporal en el cálculo de todos los ratios de Sharpe
+del pipeline; si la descarga falla, el modelo recurre automáticamente al 2{,}0\,\% anual fijo y lo
+señala por consola.
+
+\subsection{Ratio de Sharpe ajustado por autocorrelación (Lo, 2002)}
+Cuando el valor liquidativo de un fondo está ``suavizado'' -- típico de activos poco líquidos, como
+deuda privada, bonos catástrofe o estrategias de volatilidad baja con \emph{marking} discrecional --
+su volatilidad observada subestima la real. Siguiendo a Lo (2002) y Getmansky, Lo y Makarov (2004), si
+$\rho$ es la autocorrelación de primer orden de los rendimientos semanales y $q=52$ el número de
+periodos por año, el factor de corrección de varianza al agregar es
+\[
+\lambda(\rho, q) = 1 + 2\sum_{k=1}^{q-1} \frac{q-k}{q}\,\rho^{k},
+\]
+y la volatilidad ajustada es $\sigma_{\text{aj}} = \sigma\sqrt{\lambda(\rho,q)}$. El ajuste solo se
+aplica cuando $\rho > 0{,}20$ (umbral \texttt{autocorrelacion\_alerta}), para no corregir ruido de
+muestra en fondos sin suavizado real. En la cartera final, \textbf{solo una posición (F4, Twelve
+Cat Bond)} supera ese umbral ($\rho=0{,}418$, con diferencia la más alta de la cartera), lo que eleva
+su volatilidad estimada del 1{,}44\,\% al 2{,}22\,\% anual (+54{,}6\,\%): un resultado coherente con la
+naturaleza de los bonos catástrofe, cuyo valor liquidativo solo se revisa a la baja cuando se declara
+un evento asegurador, no de forma continua con el mercado -- véase la sección~\ref{sec:posiciones}.
+
+\subsection{Probabilistic Sharpe Ratio a varias ventanas (Bailey y López de Prado, 2012)}
+El Sharpe muestral es un estimador ruidoso: con historiales cortos, o con asimetría y curtosis no
+normales, un Sharpe alto puede no ser estadísticamente distinguible del de referencia. El PSR estima
+la probabilidad de que el Sharpe \emph{verdadero} supere un umbral $SR_{\text{ref}}$, dada la longitud
+de la muestra $n$, la asimetría $\hat{\gamma}_3$ y la curtosis $\hat{\gamma}_4$:
+\[
+\widehat{\mathrm{PSR}} = \Phi\!\left(\frac{(\widehat{SR}-SR_{\text{ref}})\,\sqrt{n-1}}{\sqrt{1-\hat{\gamma}_3\widehat{SR}+\frac{\hat{\gamma}_4-1}{4}\widehat{SR}^{2}}}\right),
+\]
+donde $\Phi$ es la función de distribución normal estándar y $\widehat{SR}$ es el Sharpe muestral en
+unidades del periodo (ya ajustado por autocorrelación). El \textbf{criterio de ranking de la
+selección} (\texttt{criterio\_ranking = "psr"}, \texttt{ranking\_multiventana = true}) ya no es el PSR
+a 3 años frente a 0 -- frente a ese umbral casi todos los fondos razonablemente buenos obtienen un PSR
+cercano al 100\,\% y el ranking deja de discriminar --, sino la \textbf{media del PSR en ventanas de 1,
+2 y 3 años} (\texttt{ventanas\_psr}), cada una frente a un Sharpe anual de referencia de \textbf{0{,}5}
+(\texttt{psr\_referencia}): un fondo solo puntúa alto si bate de forma sostenida, en varios horizontes,
+un listón exigente. El PSR a 3 años frente a 0 que se reporta en la tabla~\ref{tab:metricas} (a efectos
+descriptivos, no de ranking) de los 8 fondos de la cartera está entre 92{,}8\,\% y prácticamente 100\,\%.
+
+\subsection{Análisis de estilo y clasificación por tipo de activo (Sharpe, 1992)}
+Sin depender de datos de composición declarada (a menudo incompletos o desactualizados), cada fondo
+se explica como combinación lineal restringida de índices de estilo -- renta variable desarrollada y
+emergente, renta fija de gobierno y corporativa en EUR, y oro --, más un residuo que se interpreta
+como liquidez:
+\[
+r_{\text{fondo},t} - r_{f,t} = \sum_{i=1}^{k} w_i \left(r_{\text{factor }i,t} - r_{f,t}\right) + \varepsilon_t,
+\qquad w_i \geq 0,\ \ \sum_i w_i \leq 1,
+\]
+resuelto por mínimos cuadrados con restricciones (SLSQP), con el tipo libre de riesgo semanal ya
+descrito en la sección~2.1. El $R^2$ de esta regresión indica cuánta rentabilidad explican los
+factores tradicionales: valores bajos o negativos (posible cuando el ajuste restringido es peor que la
+media, como ocurre en F4, F5 y F6) son la firma estadística de una estrategia genuinamente
+\emph{market neutral}, de riesgo asegurador o alternativa, no explicable por \emph{betas}
+convencionales. El tipo de activo de cada fondo se asigna a partir de estos pesos de estilo cuando
+$R^2 \geq 0{,}5$, y a partir de la composición declarada en caso contrario.
+
+\subsection{Calidad de datos, selección: filtros, duplicados y reducción a 12 fondos}
+Antes de los filtros de riesgo habituales se excluyen (\texttt{excluir\_anomalos = true}) las series
+con volatilidad anual superior al 200\,\% o con alguna rentabilidad semanal de magnitud superior al
+50\,\%, síntoma de errores de precio más que de riesgo real; en esta ejecución ningún fondo del
+universo incurrió en esta anomalía. Sobre los 3\,279 fondos con datos se aplican después, en orden:
+(i) filtros de cobertura mínima (90\,\% de semanas con dato), volatilidad entre 1\,\% y 40\,\% anual
+(excluye monetarios puros y productos apalancados o extremos) y caída máxima inferior al 60\,\%; (ii)
+eliminación de duplicados, agrupando por clustering de enlace completo los fondos con correlación
+$\geq 0{,}95$ entre sí y conservando el de mejor puntuación de cada grupo; (iii) reducción a
+\textbf{12 posiciones} mediante clustering jerárquico de Ward sobre la matriz de distancias de
+correlación, eligiendo el fondo de mejor puntuación en cada uno de los 12 clusters, forzando que haya
+representación de cada tipo de activo presente en el universo filtrado. Solo en el \textbf{backtest
+walk-forward} (no en esta construcción puntual) esta última elección incorpora además
+\textbf{histéresis} (\texttt{usar\_histeresis = true}): un fondo que ya estaba en la cartera del
+trimestre anterior conserva su cluster salvo que el mejor candidato le supere en 0{,}05 puntos de
+PSR multi-ventana, lo que reduce la rotación de un trimestre a otro (sección~\ref{sec:backtest}).
+
+\subsection{Matriz de covarianzas: \emph{shrinkage} de Ledoit-Wolf (2004) y correlación de estrés}
+Con solo $n\approx 150$ observaciones semanales para estimar una matriz de covarianzas, el estimador
+muestral $S$ es ruidoso, especialmente fuera de la diagonal. Ledoit y Wolf (2004) proponen encogerlo
+hacia un objetivo estructurado -- aquí la matriz identidad sobre la correlación --, con intensidad
+óptima $\delta^\star \in [0,1]$ que minimiza el error cuadrático esperado frente a la covarianza
+poblacional:
+\[
+\hat{C} = \delta^\star \, \mu I + (1-\delta^\star)\, S, \qquad
+\delta^\star = \frac{\hat{\beta}^2}{\hat{\delta}^2}.
+\]
+En esta cartera la intensidad estimada es $\delta^\star = 20{,}9\,\%$. Además, con
+\texttt{usar\_corr\_estres = true} la correlación final usada por HRP es, elemento a elemento, el
+\textbf{máximo entre la correlación normal y la correlación calculada en el año 2022}
+(\texttt{estres\_inicio}/\texttt{estres\_fin}), un periodo de caídas simultáneas en renta fija y renta
+variable: la correlación de cola no puede ser más baja que la observada en un episodio de estrés real
+conocido, evitando que HRP infravalore el riesgo de concentración en un escenario adverso. Un fondo sin
+historial en 2022 conserva simplemente su correlación normal.
+
+\subsection{Hierarchical Risk Parity (López de Prado, 2016), límite de crédito y suelo marginal}
+HRP evita dos puntos débiles de la optimización de Markowitz clásica: no requiere invertir la matriz
+de covarianzas (mal condicionada con pocos activos y mucho ruido) y no utiliza rentabilidades
+esperadas, el \emph{input} más ruidoso de todos. El algoritmo ordena los activos según un
+\textbf{clustering jerárquico} (enlace de Ward) sobre la distancia de correlación
+$d_{ij} = \sqrt{\tfrac{1}{2}(1-\rho_{ij})} \in [0,1]$ (figura~\ref{fig:dendrograma}) y reparte el peso
+de cada nodo por \textbf{bisección recursiva} en proporción inversa a la varianza de cada subgrupo,
+$\alpha = 1 - \dfrac{V_L}{V_L+V_R}$. Sobre el resultado de HRP se aplican, en este orden:
+\begin{enumerate}[itemsep=2pt, parsep=0pt]
+  \item Un \textbf{techo del 20\,\%} por fondo (resuelto por bisección numérica sobre un factor de
+  escala común, preservando las proporciones relativas de HRP dentro del límite).
+  \item Un \textbf{techo del 50\,\%} al peso conjunto de los fondos del \emph{bloque de renta fija de
+  crédito} -- aquellos cuya subcategoría declarada contiene palabras como ``Corporativa'', ``Alto
+  Rendimiento'' o ``Emergente'', o cuya exposición de estilo a crédito corporativo EUR es
+  $\geq 30\,\%$ --, redistribuyendo cualquier exceso proporcionalmente al resto. En esta cartera el
+  bloque de crédito (F1, F2 y F7) suma el 41{,}6\,\%, por debajo del techo: el control está
+  activo pero no resulta vinculante en esta ejecución concreta.
+  \item El \textbf{suelo ``marginal''} (\texttt{suelo = "marginal"}), que sustituye al suelo fijo de
+  versiones anteriores: sin un mínimo de peso por fondo, se elimina iterativamente el fondo cuya
+  contribución marginal al Sharpe de la cartera, $\mathrm{Sharpe}_i - \rho(i,\text{cartera})\cdot
+  \mathrm{Sharpe}_{\text{cartera}}$, sea más negativa, recalculando los pesos (con los dos pasos
+  anteriores) tras cada eliminación, hasta que ningún fondo tenga contribución marginal negativa o se
+  alcance el mínimo de \textbf{8 fondos} (\texttt{minimo\_fondos}). En esta ejecución el proceso se
+  detuvo precisamente en el mínimo configurado: de los 12 fondos preseleccionados, 4 fueron eliminados
+  por restar Sharpe ajustado por correlación a la cartera.
+\end{enumerate}
+A diferencia del suelo fijo anterior (que garantizaba un peso mínimo a todo fondo seleccionado aunque
+restara calidad de Sharpe a la cartera), el suelo marginal prioriza la calidad de la combinación sobre
+la diversidad nominal de posiciones, a costa de cristalizar los cuatro fondos de menor volatilidad en
+el techo del 20\,\%.
+
+% ==================================================================
+\section{Composición de la cartera}
+\label{sec:composicion}
+
+La tabla~\ref{tab:composicion} muestra el peso final, la contribución al riesgo total y la
+\textbf{concentración de riesgo} (contribución al riesgo dividida entre el peso: valores por debajo
+de 1 indican posiciones ``núcleo'' que diversifican, por encima de 1 indican posiciones ``satélite''
+que concentran riesgo). Los códigos F1--F8 se usan en el resto del informe y se corresponden con el
+orden de la tabla.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Composición de la cartera: peso, contribución al riesgo y concentración}
+\label{tab:composicion}
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+\textbf{Cód.} & \textbf{Fondo} & \textbf{Peso (\%)} & \textbf{Contrib.\ riesgo (\%)} & \textbf{Concentración} \\
+\midrule
+F1 & Frontier Markets ``R-CL''              & 20{,}0 & 22{,}6 & 1{,}13 \\
+F2 & PIMCO Diversified Income Duration Hdg ``I'' & 20{,}0 & 15{,}6 & 0{,}78 \\
+F3 & Helium Fund ``B''                      & 20{,}0 & 3{,}9  & 0{,}20 \\
+F4 & Twelve Cat Bond ``P''                  & 20{,}0 & 5{,}7  & 0{,}28 \\
+F5 & BSF BlackRock Systematic ``D2''        & 9{,}6  & 18{,}4 & 1{,}91 \\
+F6 & AQR Style Premia UCITS ``W''           & 7{,}4  & 21{,}3 & 2{,}87 \\
+F7 & Macquarie Emerging Markets ``I''       & 1{,}6  & 7{,}6  & 4{,}61 \\
+F8 & OFI Precious Metals                    & 1{,}3  & 4{,}9  & 3{,}75 \\
+\midrule
+\textbf{Total} & & \textbf{100{,}0} & \textbf{100{,}0} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Las \textbf{cuatro posiciones en el techo del 20\,\%} (F1--F4) suman el \textbf{80\,\% del
+capital} pero solo el \textbf{47{,}8\,\% del riesgo total}; las cuatro restantes (F5--F8), sin ningún
+suelo que las proteja, suman el \textbf{52{,}2\,\% del riesgo} con solo el 20\,\% del capital --
+especialmente F7 y F8, cuya concentración de riesgo (4{,}61 y 3{,}75) es la mayor de la cartera pese a
+tener los pesos más pequeños: es el efecto esperado de retirar el suelo fijo y sustituirlo por el
+criterio de contribución marginal.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Métricas de rentabilidad y riesgo por fondo (ventana de estimación, anualizadas)}
+\label{tab:metricas}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+\textbf{Cód.} & \textbf{Rent.\ (\%)} & \textbf{Vol.\ aj.\ (\%)} & \textbf{Sharpe aj.} & \textbf{PSR (\%)} & \textbf{Sortino} & \textbf{Caída máx.\ (\%)} & \textbf{TER (\%)} \\
+\midrule
+F1 & 13{,}4 & 3{,}5  & 3{,}09 & 100{,}0 & 5{,}92  & $-2{,}3$  & 1{,}55 \\
+F2 & 7{,}9  & 2{,}6  & 2{,}19 & 99{,}9  & 3{,}66  & $-3{,}1$  & 0{,}69 \\
+F3 & 4{,}7  & 1{,}1  & 2{,}38 & 99{,}9  & 3{,}83  & $-0{,}8$  & 1{,}40 \\
+F4 & 9{,}5  & 2{,}2  & 3{,}23 & 100{,}0 & 10{,}01 & $-0{,}9$  & 1{,}30 \\
+F5 & 10{,}1 & 9{,}4  & 0{,}87 & 92{,}8  & 1{,}28  & $-10{,}9$ & 1{,}00 \\
+F6 & 18{,}1 & 10{,}7 & 1{,}43 & 99{,}3  & 2{,}40  & $-7{,}1$  & 0{,}85 \\
+F7 & 46{,}3 & 23{,}2 & 1{,}68 & 99{,}9  & 3{,}04  & $-18{,}8$ & 0{,}94 \\
+F8 & 25{,}5 & 26{,}5 & 0{,}92 & 94{,}0  & 1{,}42  & $-33{,}9$ & 0{,}87 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\textwidth]{salida/pesos.png}
+\caption{Peso y contribución al riesgo de cada posición.}
+\label{fig:pesos}
+\end{figure}
+
+% ==================================================================
+\section{Riesgo de la cartera}
+\label{sec:riesgo}
+
+\subsection{Exposición por tipo de activo y por estilo}
+
+La clasificación por tipo de activo (tabla~\ref{tab:exposicion}, izquierda) procede del análisis de
+estilo descrito en la sección~\ref{sec:metodologia}; seis de las ocho posiciones se etiquetan como
+``Alternativo / otros'' porque su $R^2$ frente a los índices tradicionales es bajo. La exposición por
+estilo (derecha) es más informativa del riesgo de mercado realmente incorporado: la cartera tiene una
+exposición de estilo del 9{,}3\,\% a riesgo de crédito corporativo en euros y del 9{,}3\,\% combinado a
+renta variable desarrollada y emergente, con un \textbf{79{,}5\,\%} que la regresión atribuye a
+liquidez/activos no explicados por estos cinco factores -- la exposición a liquidez más alta de las
+versiones de esta cartera analizadas hasta ahora, reflejo directo de que la mitad de las posiciones
+(F3, F4, F5, F6) son estrategias \emph{market neutral}, de riesgo asegurador o multiestrategia sin
+\emph{beta} direccional relevante.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Exposición por tipo de activo (clasificación) y por estilo (regresión de Sharpe, 1992)}
+\label{tab:exposicion}
+\begin{tabular}{@{}lr@{\hspace{1.2cm}}lr@{}}
+\toprule
+\textbf{Tipo de activo} & \textbf{Peso (\%)} & \textbf{Factor de estilo} & \textbf{Exposición (\%)} \\
+\midrule
+Alternativo / otros & 77{,}0 & RF Corporativa EUR     & 9{,}3 \\
+Renta fija          & 20{,}0 & RV Desarrollados       & 5{,}4 \\
+Renta variable       & 1{,}6  & RV Emergentes          & 3{,}9 \\
+Materias primas       & 1{,}3  & RF Gobierno EUR        & 0{,}0 \\
+                     &       & Oro                    & 1{,}9 \\
+                     &       & Liquidez / no explicado & 79{,}5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Estructura de correlaciones y clustering}
+
+La tabla~\ref{tab:correlaciones} muestra la matriz de correlaciones semanales (tras el
+\emph{shrinkage} de Ledoit-Wolf y el máximo frente a la correlación de estrés de 2022) entre las 8
+posiciones, y la figura~\ref{fig:dendrograma} su estructura jerárquica. Dos patrones destacan: (i) F1
+y F2 (deuda de mercados frontera y renta fija flexible global) están fuertemente correlacionadas entre
+sí (0{,}76), formando el núcleo de riesgo de crédito de la cartera junto con F7 y F8 (correlaciones de
+0{,}30--0{,}45); (ii) F5 (BlackRock Systematic) es, con diferencia, \textbf{la posición más
+descorrelacionada} de la cartera (correlación media de $-0{,}02$ con el resto, con valores negativos
+frente a F2, F3 y F8), mientras que F1 es el \textbf{nodo más conectado} (correlación media de
+0{,}35).
+
+\begin{table}[htbp]
+\centering
+\caption{Matriz de correlaciones semanales entre las posiciones (incluye el máximo frente a la correlación de estrés de 2022)}
+\label{tab:correlaciones}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}l*{8}{r}@{}}
+\toprule
+ & F1 & F2 & F3 & F4 & F5 & F6 & F7 & F8 \\
+\midrule
+F1 & 1{,}00 & 0{,}76 & 0{,}51 & 0{,}38 & $-$0{,}03 & 0{,}11 & 0{,}30 & 0{,}45 \\
+F2 & 0{,}76 & 1{,}00 & 0{,}45 & 0{,}23 & $-$0{,}07 & 0{,}14 & 0{,}43 & 0{,}21 \\
+F3 & 0{,}51 & 0{,}45 & 1{,}00 & 0{,}08 & $-$0{,}16 & $-$0{,}05 & 0{,}20 & 0{,}44 \\
+F4 & 0{,}38 & 0{,}23 & 0{,}08 & 1{,}00 & 0{,}02 & 0{,}30 & 0{,}13 & 0{,}02 \\
+F5 & $-$0{,}03 & $-$0{,}07 & $-$0{,}16 & 0{,}02 & 1{,}00 & 0{,}40 & $-$0{,}02 & $-$0{,}25 \\
+F6 & 0{,}11 & 0{,}14 & $-$0{,}05 & 0{,}30 & 0{,}40 & 1{,}00 & 0{,}02 & $-$0{,}08 \\
+F7 & 0{,}30 & 0{,}43 & 0{,}20 & 0{,}13 & $-$0{,}02 & 0{,}02 & 1{,}00 & 0{,}33 \\
+F8 & 0{,}45 & 0{,}21 & 0{,}44 & 0{,}02 & $-$0{,}25 & $-$0{,}08 & 0{,}33 & 1{,}00 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.78\textwidth]{salida/correlaciones.png}
+\caption{Mapa de calor de la matriz de correlaciones semanales de la tabla~\ref{tab:correlaciones}. El
+bloque de crédito (F1, F2, F7, F8) destaca en tonos cálidos; F5 (BlackRock Systematic) aparece como la
+posición más neutra frente al resto.}
+\label{fig:correlaciones}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{salida/dendrograma.png}
+\caption{Estructura jerárquica (enlace de Ward sobre la distancia de correlación) de las 8 posiciones
+finales. Las ramas que se unen primero, a menor distancia, son las más correlacionadas entre sí; HRP
+reparte el riesgo recursivamente siguiendo este mismo árbol.}
+\label{fig:dendrograma}
+\end{figure}
+
+% ==================================================================
+\section{Rentabilidad y validación fuera de muestra}
+\label{sec:backtest}
+
+\subsection{Resultados en la ventana de estimación}
+La tabla siguiente resume el comportamiento histórico de la cartera \emph{en la misma ventana usada
+para seleccionarla y para estimar la covarianza}; estas cifras tienen, por construcción, un sesgo
+optimista y se incluyen solo como diagnóstico de coherencia entre la volatilidad ex ante (de la
+matriz de covarianzas) y la realizada.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{@{}lr@{}}
+\toprule
+\textbf{Métrica (ventana 2023-10-06 a 2026-09-25)} & \textbf{Valor} \\
+\midrule
+Volatilidad esperada (ex ante, matriz de covarianzas) & 2{,}26\,\% \\
+Rentabilidad anualizada realizada & 10{,}5\,\% \\
+Volatilidad anualizada realizada & 2{,}09\,\% \\
+Sharpe realizado & 3{,}86 \\
+Caída máxima realizada & $-2{,}07\,\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La volatilidad ex ante (2{,}26\,\%) y la realizada (2{,}09\,\%) son razonablemente próximas, lo que
+indica que la matriz de covarianzas con \emph{shrinkage} y correlación de estrés describe de forma
+consistente el riesgo \emph{dentro} de la ventana, sin introducir un sesgo claro en ningún sentido. El
+Sharpe de 3{,}86 es, sin embargo, un resultado \emph{in-sample} y no debe tomarse como expectativa.
+
+\subsection{Backtest walk-forward (fuera de muestra)}
+El backtest recalcula \textbf{todo el proceso} -- selección (con histéresis), duplicados, clustering,
+poda por contribución marginal y pesos -- en cada uno de 8 rebalanceos trimestrales durante 2 años,
+usando en cada punto solo información disponible hasta ese momento, y compara HRP con cuatro métodos
+alternativos de ponderación sobre el mismo proceso de selección, además de 1/N sobre todo el universo
+filtrado. Junto al Sharpe se reporta su \textbf{error estándar} (Lo, 2002, caso iid:
+$\mathrm{SE}(\widehat{SR}) \approx \sqrt{(1+0{,}5\,\widehat{SR}^2)/T}$, anualizado) y su intervalo de
+confianza al 95\,\%, y un \textbf{test de diferencia de Sharpe frente a HRP} (Jobson y Korkie, 1981,
+con la corrección de varianza de Memmel, 2003), cuyo p-valor indica si la diferencia observada frente a
+HRP es compatible con el ruido muestral.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Backtest walk-forward, 8 rebalanceos trimestrales (104 semanas), fuera de muestra}
+\label{tab:backtest}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+\textbf{Método} & \textbf{Rent.\ anual (\%)} & \textbf{Vol.\ anual (\%)} & \textbf{Sharpe} & \textbf{IC 95\,\%} & \textbf{p-valor JK vs.\ HRP} & \textbf{Caída máx.\ (\%)} & \textbf{Rotación media (\%)} \\
+\midrule
+\textbf{HRP (elegido)}      & \textbf{8{,}5}  & \textbf{3{,}5} & \textbf{1{,}91} & \textbf{$[0{,}50,\,3{,}32]$} & -- & \textbf{$-$2{,}5} & 55{,}7 \\
+Inversa de la volatilidad   & 10{,}0 & 4{,}3 & 1{,}88 & $[0{,}47,\,3{,}29]$ & 0{,}91 & $-$2{,}6 & 54{,}4 \\
+Mínima varianza              & 9{,}0  & 3{,}8 & 1{,}85 & $[0{,}45,\,3{,}26]$ & 0{,}86 & $-$2{,}6 & 55{,}0 \\
+Máximo Sharpe (encogido)    & 7{,}7  & 4{,}0 & 1{,}48 & $[0{,}08,\,2{,}88]$ & 0{,}51 & $-$2{,}7 & 55{,}0 \\
+Equiponderada (seleccionados) & 12{,}3 & 6{,}5 & 1{,}57 & $[0{,}16,\,2{,}97]$ & 0{,}49 & $-$5{,}6 & 55{,}4 \\
+1/N (todo el universo filtrado) & 8{,}4  & 7{,}1 & 0{,}95 & $[-0{,}44,\,2{,}34]$ & 0{,}07 & $-$8{,}5 & 11{,}7 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\noindent \textbf{HRP obtiene el mejor Sharpe de los seis métodos aplicados sobre el mismo conjunto de
+fondos seleccionados}, y es el \textbf{único cuyo intervalo de confianza al 95\,\% no cruza el cero}.
+Dicho esto, ninguno de los p-valores del test de Jobson-Korkie frente a HRP es significativo al 5\,\%
+(el más bajo, 0{,}07, corresponde a 1/N sobre todo el universo): con solo 104 semanas de backtest, el
+test no tiene potencia estadística suficiente para distinguir a HRP de los demás métodos de
+ponderación con confianza -- una ilustración honesta de hasta qué punto estas comparaciones de Sharpe a
+partir de un backtest corto son ruidosas, a pesar de que el ranking puntual favorezca claramente a HRP.
+HRP sí mejora sustancialmente sobre 1/N aplicado a todo el universo (Sharpe 0{,}95, caída máxima
+$-8{,}5\,\%$), lo que valida la etapa de selección. La rotación media (en torno al 55\,\%, salvo en 1/N
+sobre todo el universo) es algo menor que en versiones anteriores de esta cartera, parcialmente
+atribuible a la histéresis introducida en la selección del backtest: en el concurso de simulación no
+hay costes de transacción, pero en gestión real habría que descontar este efecto del resultado.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{salida/backtest.png}
+\caption{Evolución del valor de la cartera (base 100) bajo los distintos métodos, backtest
+walk-forward fuera de muestra.}
+\label{fig:backtest}
+\end{figure}
+
+\subsection{Mapa riesgo-rentabilidad frente al universo}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{salida/riesgo_rentabilidad.png}
+\caption{Posición de los 8 fondos finales (resaltados) frente al resto del universo filtrado (excluidas
+las series con datos anómalos), en términos de volatilidad ajustada por autocorrelación y rentabilidad
+anual en la ventana de estimación.}
+\label{fig:riesgorentabilidad}
+\end{figure}
+
+\subsection{Frontera eficiente de las posiciones seleccionadas}
+
+La figura~\ref{fig:frontera} traza la frontera eficiente de Markowitz construida únicamente con los 8
+fondos finales y la matriz de covarianzas con \emph{shrinkage} y correlación de estrés
+(sección~\ref{sec:metodologia}), y sitúa sobre ella la cartera HRP junto con las carteras de mínima
+varianza y de máximo Sharpe (tangente) construidas con el mismo universo de 8 fondos, sin los límites
+de peso. La cartera HRP queda ligeramente por dentro de la frontera -- el coste esperado de renunciar a
+invertir las rentabilidades esperadas, que HRP ignora deliberadamente por ser el \emph{input} más
+ruidoso del modelo -- pero con una volatilidad sensiblemente inferior a la de la mayoría de fondos
+individuales (en particular F7 y F8, con volatilidades individuales del 23--27\,\%) gracias a la
+diversificación entre el bloque de crédito, las estrategias no direccionales y el oro.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{salida/frontera_eficiente.png}
+\caption{Frontera eficiente de los 8 fondos finales (sin límites de peso), con la cartera HRP final, la
+cartera de mínima varianza y la de máximo Sharpe (tangente) señaladas, junto con la posición individual
+de cada fondo.}
+\label{fig:frontera}
+\end{figure}
+
+% ==================================================================
+\section{Justificación de las posiciones}
+\label{sec:posiciones}
+
+Para cada posición se da primero la justificación \textbf{matemática} (qué mide el modelo: estilo,
+correlación, contribución al riesgo, estadísticos de cola) y después la \textbf{cualitativa}
+(categoría declarada, gestora y papel que cumple en la cartera).
+
+\subsection*{F1 -- Frontier Markets ``R-CL'' (20{,}0\,\%)}
+\textbf{Matemática:} en el techo de peso y la posición con \textbf{mayor contribución al riesgo de la
+cartera} (22{,}6\,\%, concentración 1{,}13): su volatilidad (3{,}5\,\%) es la más alta de las cuatro
+posiciones en el techo. Sharpe ajustado 3{,}09 y PSR prácticamente 100\,\%. Es el \textbf{nodo más
+correlacionado} de la cartera (media 0{,}35, máximo 0{,}76 con F2). Exposición de estilo moderada
+($R^2=0{,}19$): 27{,}8\,\% crédito corporativo EUR, 6{,}4\,\% renta variable desarrollada, 4{,}9\,\%
+emergente, con 59{,}3\,\% liquidez/no explicado. Asimetría ligeramente negativa ($-0{,}22$) y curtosis
+moderada (4{,}1).
+\textbf{Cualitativa:} deuda de mercados frontera (clase ``R-CL'', inversión mínima de solo 50\,€)
+gestionada por Global Evolution, con TER del 1{,}55\,\%, el más alto de la cartera; cumple el criterio
+de bloque de crédito por su subcategoría (``RF Global Emergente''). Combina prima de riesgo de crédito
+de mercados frontera con una rentabilidad anualizada del 13{,}4\,\%, la segunda más alta de la cartera.
+
+\subsection*{F2 -- PIMCO Diversified Income Duration Hedged ``I'' (20{,}0\,\%)}
+\textbf{Matemática:} en el techo de peso, con la segunda mayor contribución al riesgo (15{,}6\,\%,
+concentración 0{,}78). Es el fondo con \textbf{mejor ajuste de estilo entre las posiciones en el techo}
+($R^2=0{,}51$): 10{,}4\,\% renta variable desarrollada, 4{,}2\,\% emergente y 9{,}5\,\% crédito
+corporativo, con 75{,}9\,\% de liquidez/no explicado. Asimetría negativa marcada ($-0{,}65$) y curtosis
+alta (6{,}3): cola izquierda pesada, coherente con un fondo de renta fija diversificada que puede sufrir
+ventas masivas simultáneas en episodios de estrés de crédito. Fuertemente correlacionado con F1
+(0{,}76), el par más correlacionado de la cartera.
+\textbf{Cualitativa:} renta fija diversificada global con cobertura de divisa a EUR, gestionada por
+PIMCO; clase institucional con una inversión mínima de 5 millones de euros y el TER más bajo de la
+cartera (0{,}69\,\%). Cumple el criterio de bloque de crédito por su subcategoría (``RF Flexible Global'').
+
+\subsection*{F3 -- Helium Fund ``B'' (20{,}0\,\%)}
+\textbf{Matemática:} en el techo de peso pero con la \textbf{menor concentración de riesgo de toda la
+cartera} (0{,}20): aporta cinco veces más peso que riesgo, gracias a su volatilidad muy baja (1{,}1\,\%)
+y su escasa correlación con el resto (media 0{,}21, incluso negativa con F5 y F6). $R^2$ muy bajo
+(0{,}12): el 88{,}3\,\% de su rentabilidad es liquidez/no explicada por los factores tradicionales. Es
+el fondo con \textbf{mayor curtosis de la cartera} (10{,}7) y asimetría negativa marcada ($-0{,}79$):
+ganancias pequeñas y frecuentes con riesgo de pérdidas puntuales grandes, la firma estadística clásica
+de estrategias \emph{event-driven}.
+\textbf{Cualitativa:} estrategia \emph{event-driven} de Syquant Capital, con inversión mínima de 5\,000\,€;
+su papel en la cartera es puramente diversificador y de generación de \emph{carry} no correlacionado,
+no de captura de \emph{beta} de mercado.
+
+\subsection*{F4 -- Twelve Cat Bond ``P'' (20{,}0\,\%)}
+\textbf{Matemática:} es la \textbf{única posición de la cartera a la que se aplica el ajuste de Lo
+(2002)}: su autocorrelación semanal ($\rho=0{,}418$) es, con diferencia, la más alta de la cartera, lo
+que eleva su volatilidad estimada del 1{,}4\,\% al 2{,}2\,\% anual (+54{,}6\,\%); el modelo la trata
+como más arriesgada de lo que sugiere su historial bruto, precisamente para evitar que un NAV suavizado
+le dé un peso excesivo en HRP. Tiene el \textbf{mejor Sortino de la cartera} (10{,}01) y una caída
+máxima mínima ($-0{,}9\,\%$) en la ventana de estimación -- cifras que hay que leer con cautela, porque
+son exactamente el tipo de historial ``demasiado bueno'' que señala un NAV poco reactivo. Su $R^2$ es
+\textbf{negativo} ($-0{,}42$): no lo explica ningún factor de mercado tradicional, coherente con que su
+riesgo real es la ocurrencia de catástrofes naturales aseguradas, no el riesgo de crédito o de tipos de
+interés que sugeriría su categoría de renta fija.
+\textbf{Cualitativa:} bono catástrofe (\emph{insurance-linked security}) gestionado por Twelve Capital,
+con cobertura de divisa a EUR; a pesar de etiquetarse como ``RF Global'' no participa del criterio de
+bloque de crédito de esta cartera, porque su riesgo no es de mercado sino actuarial -- un buen ejemplo
+de por qué conviene revisar la volatilidad ajustada por autocorrelación antes de confiar en el
+historial bruto de un activo de este tipo.
+
+\subsection*{F5 -- BSF BlackRock Systematic ``D2'' (9{,}6\,\%)}
+\textbf{Matemática:} $R^2$ prácticamente nulo (0{,}004): el 90{,}3\,\% de su rentabilidad es
+liquidez/no explicada por los factores tradicionales. Es la \textbf{posición más descorrelacionada de
+toda la cartera} (correlación media de $-0{,}02$, negativa frente a F2, F3 y F8), aunque con
+correlación relevante frente a F6 (0{,}40), el otro fondo multiestrategia de la cartera. Su
+contribución al riesgo (18{,}4\,\%) casi duplica su peso (concentración 1{,}91): es la volatilidad más
+alta entre las posiciones no satélite (9{,}4\,\%) la que explica esa concentración, no la correlación.
+Sharpe ajustado modesto (0{,}87) y el PSR más bajo de la cartera (92{,}8\,\%).
+\textbf{Cualitativa:} estrategia sistemática multiestrategia de BlackRock Strategic Funds, con
+cobertura de divisa a EUR e inversión mínima de 100\,000\,€; su función es diversificar frente al
+bloque de crédito y de renta variable, a pesar de que su Sharpe individual sea el segundo más bajo de
+la cartera.
+
+\subsection*{F6 -- AQR Style Premia UCITS ``W'' (7{,}4\,\%)}
+\textbf{Matemática:} $R^2$ negativo ($-0{,}021$), 88{,}9\,\% liquidez/no explicado: igual que F5, no
+tiene \emph{beta} explotable por los factores tradicionales. Es, sin embargo, la posición con \textbf{mayor
+contribución al riesgo relativa a su peso tras F7 y F8} (concentración 2{,}87): con solo el 7{,}4\,\%
+del capital aporta el 21{,}3\,\% del riesgo total, por su volatilidad elevada (10{,}7\,\%) y su
+correlación con F5 (0{,}40) y F4 (0{,}30). Tiene la \textbf{mayor rentabilidad anualizada entre las
+posiciones no satélite} (18{,}1\,\%) y un Sharpe ajustado de 1{,}43.
+\textbf{Cualitativa:} fondo de primas de estilo (\emph{style premia}) multiactivo de AQR Capital
+Management, con cobertura de divisa a EUR e inversión mínima de 100\,000\,€; captura primas de riesgo
+sistemáticas (momentum, valor, carry, defensivo) no correlacionadas con los índices tradicionales, a
+cambio de una volatilidad notablemente más alta que el resto de posiciones no satélite.
+
+\subsection*{F7 -- Macquarie Emerging Markets ``I'' (1{,}6\,\%)}
+\textbf{Matemática:} \textbf{segundo mayor concentrador de riesgo de la cartera} (concentración 4{,}61):
+con apenas el 1{,}6\,\% del capital aporta el 7{,}6\,\% del riesgo total. Es el fondo con
+\textbf{mejor ajuste de estilo de toda la cartera} ($R^2=0{,}56$) con una exposición del 100\,\% a
+renta variable emergente: es \emph{beta} de mercado emergente limpio, sin componente de liquidez ni
+mezcla con otros factores. Volatilidad del 23{,}2\,\% y caída máxima de $-18{,}8\,\%$, las segundas más
+altas de la cartera; es precisamente este perfil el que explica por qué, sin el suelo fijo de versiones
+anteriores, el criterio de contribución marginal lo deja con un peso residual en vez de retirarlo del
+todo: su Sharpe ajustado (1{,}68) y su correlación moderada con el resto bastan para que siga aportando
+valor marginal positivo, aunque mínimo.
+\textbf{Cualitativa:} renta variable emergente pura gestionada por Macquarie Bank International
+(clase institucional, inversión mínima de 1 millón de euros); cumple el criterio de bloque de crédito
+de esta configuración por contener ``Emergente'' en su subcategoría (``RV Global Emergente'') pese a
+ser renta variable y no deuda -- una imprecisión conocida del filtro por palabras clave, discutida en
+la sección de limitaciones.
+
+\subsection*{F8 -- OFI Precious Metals (1{,}3\,\%)}
+\textbf{Matemática:} exposición de estilo del 90{,}3\,\% a oro ($R^2=0{,}52$), la más limpia y unívoca
+de toda la cartera en términos de factor único. Es también el fondo con \textbf{mayor volatilidad
+ajustada (26{,}5\,\%) y mayor caída máxima ($-33{,}9\,\%$)} de la cartera, y su PSR (94{,}0\,\%) es el
+único, junto con F5, por debajo de 99\,\%, reflejando un Sharpe ajustado modesto (0{,}92). Es el
+\textbf{tercer mayor concentrador de riesgo} (3{,}75): con el 1{,}3\,\% del capital aporta el 4{,}9\,\%
+del riesgo. Correlación negativa con F5 y F6 ($-0{,}25$ y $-0{,}08$), positiva con el bloque de crédito
+(0{,}21--0{,}45).
+\textbf{Cualitativa:} materias primas preciosas (oro) de OFI Asset Management, inversión mínima
+simbólica (1\,€); su función no es generar rentabilidad ajustada por riesgo competitiva por sí sola,
+sino actuar como cobertura frente a escenarios de estrés de mercado o inflación en los que el resto de
+la cartera (crédito y multiestrategia) tendería a comportarse peor.
+
+% ==================================================================
+\section{Limitaciones y advertencias}
+
+\begin{itemize}[itemsep=3pt]
+  \item \textbf{Sesgo de supervivencia:} el universo de 3\,885 fondos son los que existen hoy en
+  IronIA; el backtest es, en términos absolutos, optimista. Es válido para comparar métodos de
+  ponderación entre sí (sección~\ref{sec:backtest}), no como estimación de rentabilidad futura.
+  \item \textbf{Significatividad estadística limitada:} con solo 104 semanas de backtest, el test de
+  Jobson-Korkie frente a HRP no es significativo al 5\,\% para ningún método alternativo (el p-valor
+  más bajo es 0{,}07). El ranking de Sharpe entre métodos debe leerse como una preferencia razonada,
+  no como una diferencia estadísticamente probada.
+  \item \textbf{Filtro de bloque de crédito por palabras clave:} el criterio que identifica el bloque
+  de renta fija de crédito (subcategoría que contiene ``Corporativa'', ``Emergente'', etc.) captura
+  también a F7, un fondo de renta variable emergente, porque su subcategoría declarada contiene la
+  palabra ``Emergente''. El techo del 50\,\% no resultó vinculante en esta ejecución, pero el criterio
+  por palabras clave es una aproximación imperfecta que conviene revisar si la composición cambia.
+  \item \textbf{Rotación:} la composición cambia de forma relevante entre rebalanceos trimestrales
+  (rotación media en torno al 55,7\,\%, algo menor que en versiones anteriores gracias a la
+  histéresis). El concurso de simulación no parece penalizar esto con costes de transacción, pero en
+  gestión real habría que descontarlos.
+  \item \textbf{Fuentes de datos no oficiales:} los precios proceden de fuentes públicas (Yahoo
+  Finance / Morningstar vía \texttt{yfinance}/\texttt{mstarpy}), no de los proveedores oficiales de
+  los fondos; pueden contener huecos o pequeñas discrepancias frente al NAV oficial. El \,\texteuro STR
+  usado como tipo libre de riesgo procede de la API pública del BCE; si no está disponible, el modelo
+  recurre automáticamente a un tipo fijo y lo señala.
+  \item \textbf{Persistencia del rendimiento:} el ranking se basa en historia de rentabilidad y riesgo
+  (PSR a varias ventanas); la evidencia académica sobre persistencia del rendimiento de los fondos es
+  débil. El cribado sirve para evitar lo claramente malo, no para predecir a los ganadores futuros.
+  \item \textbf{Categoría declarada frente a estilo real:} como se muestra en F4 (bono catástrofe
+  etiquetado como renta fija pero con $R^2$ negativo frente a los factores de mercado) y en F7, la
+  categoría declarada no siempre coincide con el riesgo de mercado real; las conclusiones cualitativas
+  de este informe se basan, cuando difieren, en el estilo estimado por regresión.
+\end{itemize}
+
+% ==================================================================
+\section{Referencias}
+
+\begin{itemize}[itemsep=2pt]
+  \item Lo, A. (2002). \emph{The Statistics of Sharpe Ratios}. Financial Analysts Journal.
+  \item Getmansky, M., Lo, A. y Makarov, I. (2004). \emph{An Econometric Model of Serial Correlation
+  and Illiquidity in Hedge Fund Returns}. Journal of Financial Economics.
+  \item Bailey, D. y López de Prado, M. (2012). \emph{The Sharpe Ratio Efficient Frontier}. Journal
+  of Risk.
+  \item Sharpe, W. (1992). \emph{Asset Allocation: Management Style and Performance Measurement}.
+  Journal of Portfolio Management.
+  \item Ledoit, O. y Wolf, M. (2004). \emph{Honey, I Shrunk the Sample Covariance Matrix}. Journal of
+  Portfolio Management.
+  \item López de Prado, M. (2016). \emph{Building Diversified Portfolios that Outperform Out of
+  Sample}. Journal of Portfolio Management.
+  \item Jobson, J. D. y Korkie, B. M. (1981). \emph{Performance Hypothesis Testing with the Sharpe and
+  Treynor Measures}. Journal of Finance.
+  \item Memmel, C. (2003). \emph{Performance Hypothesis Testing with the Sharpe Ratio}. Finance
+  Letters.
+\end{itemize}
+
+\end{document}

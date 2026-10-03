@@ -1,0 +1,8 @@
+﻿configuracion;sharpe_hrp;ic95;vol_anual;max_drawdown;rotacion_media;peso_credito;n_fondos
+0: baseline (todo OFF);1,319;[-0.08, 2.72];0,032;-0,029;0,615;0,764;12
+1: +rf_fuente=estr;1,468;[0.07, 2.87];0,03;-0,026;0,581;0,786;12
+2: +bloque credito/estres;0,897;[-0.49, 2.29];0,039;-0,045;0,626;0,5;12
+3: +suelo marginal;1,029;[-0.36, 2.42];0,031;-0,039;0,547;0,5;8
+4: +ranking multiventana/histeresis;1,323;[-0.07, 2.72];0,028;-0,025;0,537;0,416;8
+5: +backtest honesto (sin cambio config);1,323;[-0.07, 2.72];0,028;-0,025;0,537;0,416;8
+6: +excluir_anomalos;1,323;[-0.07, 2.72];0,028;-0,025;0,537;0,416;8

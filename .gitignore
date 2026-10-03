@@ -1,0 +1,21 @@
+# Datos en caché descargados (se regeneran automáticamente)
+cache/
+cache_demo/
+
+# Resultados generados por cada ejecución del pipeline
+salida/
+salida_demo/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Archivos del sistema / editor
+.DS_Store
+Thumbs.db
